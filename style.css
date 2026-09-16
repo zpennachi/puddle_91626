@@ -1,0 +1,168 @@
+/* =========================================
+   Reset & Base Styles
+   ========================================= */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-color: #ffffff;
+  --text-color: #000000;
+  --border-color: #000000;
+  --font-main: 'Inconsolata', monospace, -apple-system, BlinkMacSystemFont, sans-serif;
+  --shadow-canvas: 0 16px 48px rgba(0, 0, 0, 0.18);
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  font-family: var(--font-main);
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+/* =========================================
+   Main Centered Playground Container
+   ========================================= */
+.playground-container {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 16px 20px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+/* =========================================
+   Large Centered Canvas
+   ========================================= */
+.canvas-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 24px;
+  width: 100%;
+}
+
+#glitchCanvas {
+  display: block;
+  width: 96vw;
+  max-width: 1500px;
+  height: 82vh;
+  max-height: 920px;
+  object-fit: cover;
+  border-radius: 0;
+  box-shadow: none;
+  background-color: #0e0e0e;
+  cursor: pointer;
+  user-select: none;
+}
+
+/* =========================================
+   Centered Pure ASCII Sliders
+   ========================================= */
+.controls-panel {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 24px 32px;
+  width: 100%;
+}
+
+.ascii-slider {
+  font-family: 'Inconsolata', monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #000000;
+  cursor: ew-resize;
+  user-select: none;
+  -webkit-user-select: none;
+  padding: 4px 6px;
+  letter-spacing: 1px;
+  line-height: 1;
+  outline: none;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+}
+
+.ascii-slider:hover {
+  opacity: 0.7;
+}
+
+.ascii-slider:active {
+  transform: scale(0.98);
+}
+
+/* =========================================
+   Floating Controls (Audio Mute)
+   ========================================= */
+.floating-controls {
+  position: fixed;
+  bottom: 20px;
+  right: 24px;
+  display: flex;
+  align-items: center;
+  z-index: 1000;
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: #000000;
+  cursor: pointer;
+  padding: 6px;
+  opacity: 0.8;
+  transition: opacity 0.15s ease, transform 0.1s ease;
+  user-select: none;
+  outline: none;
+}
+
+.icon-btn svg {
+  display: block;
+  stroke: currentColor;
+}
+
+.icon-btn:hover {
+  opacity: 1;
+  transform: scale(1.08);
+}
+
+.icon-btn:active {
+  transform: scale(0.95);
+}
+
+/* =========================================
+   Responsive Design
+   ========================================= */
+@media (max-width: 768px) {
+  #glitchCanvas {
+    width: 94vw;
+    height: 62vh;
+  }
+
+  .controls-panel {
+    gap: 16px;
+  }
+
+  .floating-controls {
+    bottom: 16px;
+    right: 16px;
+  }
+}
