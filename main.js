@@ -1,5 +1,5 @@
-﻿/**
- * Glitched Art Playground - Standalone Vanilla JS
+/**
+ * zpennachi
  * Pure ASCII interactive sliders, audio synth, and wave glitch engine
  */
 
