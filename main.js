@@ -1,11 +1,10 @@
 ﻿/**
  * zpennachi
- * Exact 100% Original Webflow Math with High-Performance Sine Table Separation
- * Uncompromised Authentic Feedback & 60 FPS Execution
+ * Exact 100% Verbatim Original Webflow Glitch Code
  */
 
 const canvas = document.getElementById('glitchCanvas');
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const ctx = canvas.getContext('2d');
 const muteBtn = document.getElementById('mute-btn');
 
 const amplitudeEl = document.getElementById('amplitude-slider');
@@ -17,19 +16,11 @@ let period = parseFloat(periodEl.dataset.val);
 let effectIntensity = parseFloat(effectEl.dataset.val);
 
 let imageData;
-let glitchedPixels = null;
-let waveImageData = null;
 let eventListenersInitialized = false;
 let animationRequestId;
 
 const defaultImageUrl = './assets/default-image.webp';
 const defaultImageFallback = 'https://cdn.prod.website-files.com/643af806354c783eb866d160/645123b173e3c023c2af5543_06_Seeing-the-forest-for-the-trees.webp';
-
-// Pre-allocated Lookup Tables for 60fps performance
-let sinTableX1 = new Float32Array(300);
-let sinTableY1 = new Float32Array(300);
-let sinTableX2 = new Float32Array(300);
-let sinTableY2 = new Float32Array(300);
 
 // ==========================================
 // Interactive ASCII Slider Component
@@ -128,12 +119,12 @@ class AsciiSlider {
 }
 
 // ==========================================
-// Exact Original Image Sizing
+// Exact Original Webflow Image Processing & Glitch Math
 // ==========================================
 function resizeImage(image, maxWidth, maxHeight, useMaxSize = true) {
   return new Promise((resolve) => {
-    const offCanvas = document.createElement('canvas');
-    const offCtx = offCanvas.getContext('2d');
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
 
     let width = image.width;
     let height = image.height;
@@ -152,12 +143,12 @@ function resizeImage(image, maxWidth, maxHeight, useMaxSize = true) {
       }
     }
 
-    offCanvas.width = width;
-    offCanvas.height = height;
-    offCtx.drawImage(image, 0, 0, width, height);
+    canvas.width = width;
+    canvas.height = height;
+    ctx.drawImage(image, 0, 0, width, height);
     const resizedImage = new Image();
     resizedImage.onload = () => resolve(resizedImage);
-    resizedImage.src = offCanvas.toDataURL();
+    resizedImage.src = canvas.toDataURL();
   });
 }
 
@@ -175,12 +166,6 @@ async function loadImage(src, useMaxSize = true) {
     const resizedImg = await resizeImage(img, maxWidth, maxHeight);
     canvas.width = resizedImg.width;
     canvas.height = resizedImg.height;
-
-    sinTableX1 = new Float32Array(canvas.width);
-    sinTableY1 = new Float32Array(canvas.height);
-    sinTableX2 = new Float32Array(canvas.width);
-    sinTableY2 = new Float32Array(canvas.height);
-
     ctx.drawImage(resizedImg, 0, 0);
     imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
@@ -205,9 +190,6 @@ async function loadImage(src, useMaxSize = true) {
   }
 }
 
-// ==========================================
-// 100% Authentic Glitch & Optimized Loop
-// ==========================================
 function triggerSort() {
   if (!imageData) {
     return;
@@ -215,22 +197,22 @@ function triggerSort() {
 
   const data = imageData.data;
   const numPixels = data.length / 4;
-  const w = canvas.width;
-  const h = canvas.height;
 
-  glitchedPixels = new Uint8ClampedArray(data);
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  const glitchedPixels = new Uint8ClampedArray(data);
   for (let i = 0; i < numPixels; i++) {
     const offset = i * 4;
-    const x = (i % w) + 15 * (Math.random() - 0.5);
-    const y = Math.floor(i / w) + 3 * (Math.random() - 0.5);
-    const offset2 = (Math.floor(y) * w + Math.floor(x)) * 4;
+    const x = (i % canvas.width) + 15 * (Math.random() - 0.5);
+    const y = Math.floor(i / canvas.width) + 3 * (Math.random() - 0.5);
+    const offset2 = (Math.floor(y) * canvas.width + Math.floor(x)) * 4;
     glitchedPixels[offset] = data[offset2];
     glitchedPixels[offset + 1] = data[offset2 + 1];
     glitchedPixels[offset + 2] = data[offset2 + 2];
     glitchedPixels[offset + 3] = data[offset2 + 3];
   }
 
-  waveImageData = new ImageData(new Uint8ClampedArray(glitchedPixels), w, h);
+  const waveImageData = new ImageData(glitchedPixels, canvas.width, canvas.height);
 
   if (animationRequestId) {
     cancelAnimationFrame(animationRequestId);
@@ -240,53 +222,22 @@ function triggerSort() {
   const animate = () => {
     frameCount++;
     if (frameCount % 4 === 0) {
-      const safePeriod = period === 0 ? 0.001 : period;
-      const freq1 = (2 * Math.PI) / safePeriod;
-      const freq2 = (2 * Math.PI) / (safePeriod / 1.5);
-      const now = Date.now();
-      const t2000 = now / 2000;
-      const t3000 = now / 3000;
-      const t30000 = now / 30000;
+      const freq1 = 2 * Math.PI / period;
+      const freq2 = 2 * Math.PI / (period / 1.5);
+      for (let i = 0; i < numPixels; i++) {
+        const offset = i * 4;
+        const x = i % canvas.width;
+        const y = Math.floor(i / canvas.width);
+        const dx = Math.round(amplitude * Math.sin(freq1 * (x + (Date.now() / 2000))) * Math.sin(freq1 * (y + (Date.now() / 2000))));
+        const dy = Math.round(amplitude * Math.sin(freq2 * (x + (Date.now() / 3000))) * Math.sin(freq2 * (y + (Date.now() / 30000))));
+        const x2 = Math.max(0, Math.min(canvas.width - 1, x + dx));
+        const y2 = Math.max(0, Math.min(canvas.height - 1, y + dy));
+        const offset2 = (y2 * canvas.width + x2) * 4;
 
-      // Pre-calculate 1D sine tables (only W + H operations per frame!)
-      for (let x = 0; x < w; x++) {
-        sinTableX1[x] = Math.sin(freq1 * (x + t2000));
-        sinTableX2[x] = Math.sin(freq2 * (x + t3000));
-      }
-      for (let y = 0; y < h; y++) {
-        sinTableY1[y] = Math.sin(freq1 * (y + t2000));
-        sinTableY2[y] = Math.sin(freq2 * (y + t30000));
-      }
-
-      const orig = imageData.data;
-      const glitched = glitchedPixels;
-      const wave = waveImageData.data;
-      const eff = effectIntensity;
-      const amp = amplitude;
-
-      for (let y = 0; y < h; y++) {
-        const factorY1 = amp * sinTableY1[y];
-        const factorY2 = amp * sinTableY2[y];
-        const rowOffset = y * w;
-
-        for (let x = 0; x < w; x++) {
-          const pixelIndex = rowOffset + x;
-          const offset = pixelIndex * 4;
-
-          const dx = Math.round(sinTableX1[x] * factorY1);
-          const dy = Math.round(sinTableX2[x] * factorY2);
-
-          const x2 = x + dx < 0 ? 0 : (x + dx >= w ? w - 1 : x + dx);
-          const y2 = y + dy < 0 ? 0 : (y + dy >= h ? h - 1 : y + dy);
-          const offset2 = (y2 * w + x2) * 4;
-
-          wave[offset] = orig[offset] + (glitched[offset2] - orig[offset]) * eff;
-          wave[offset + 1] = orig[offset + 1] + (glitched[offset2 + 1] - orig[offset + 1]) * eff;
-          wave[offset + 2] = orig[offset + 2] + (glitched[offset2 + 2] - orig[offset + 2]) * eff;
-          wave[offset + 3] = orig[offset + 3];
+        for (let j = 0; j < 4; j++) {
+          waveImageData.data[offset + j] = lerp(imageData.data[offset + j], glitchedPixels[offset2 + j], effectIntensity);
         }
       }
-
       ctx.putImageData(waveImageData, 0, 0);
     }
     animationRequestId = requestAnimationFrame(animate);
@@ -295,14 +246,12 @@ function triggerSort() {
   animate();
 }
 
-// 4x crisp export on click
 function saveImage() {
   if (!canvas) return;
   const exportCanvas = document.createElement('canvas');
-  exportCanvas.width = canvas.width * 4;
-  exportCanvas.height = canvas.height * 4;
+  exportCanvas.width = 1920;
+  exportCanvas.height = 1080;
   const exportCtx = exportCanvas.getContext('2d');
-  exportCtx.imageSmoothingEnabled = false;
   exportCtx.drawImage(canvas, 0, 0, exportCanvas.width, exportCanvas.height);
   const link = document.createElement('a');
   link.href = exportCanvas.toDataURL('image/png');
