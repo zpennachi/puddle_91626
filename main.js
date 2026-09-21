@@ -1,10 +1,10 @@
-/**
+﻿/**
  * zpennachi
- * Pure ASCII interactive sliders, audio synth, and wave glitch engine
+ * High-Performance Hardware-Accelerated WebGL Glitch & Wave Distortion Engine
+ * Pure ASCII interactive sliders & Harmonic Web Audio Synth
  */
 
 const canvas = document.getElementById('glitchCanvas');
-const ctx = canvas.getContext('2d');
 const muteBtn = document.getElementById('mute-btn');
 
 const amplitudeEl = document.getElementById('amplitude-slider');
@@ -15,15 +15,150 @@ let amplitude = parseFloat(amplitudeEl.dataset.val);
 let period = parseFloat(periodEl.dataset.val);
 let effectIntensity = parseFloat(effectEl.dataset.val);
 
-let imageData;
+let animationRequestId = null;
 let eventListenersInitialized = false;
-let animationRequestId;
+let currentImageSource = null;
+
+// Target high-definition resolution (800x800 for crystal-clear fidelity & 60fps GPU performance)
+const TARGET_RESOLUTION = 800;
 
 const defaultImageUrl = './assets/default-image.webp';
 const defaultImageFallback = 'https://cdn.prod.website-files.com/643af806354c783eb866d160/645123b173e3c023c2af5543_06_Seeing-the-forest-for-the-trees.webp';
 
 // ==========================================
-// Interactive ASCII Slider Component
+// 1. WebGL Shader Sources & Engine
+// ==========================================
+let gl = null;
+let program = null;
+let origTexture = null;
+let glitchTexture = null;
+let uniformLocations = {};
+let origImageData = null;
+let glitchImageData = null;
+let imageWidth = 0;
+let imageHeight = 0;
+
+const vsSource = `
+  attribute vec2 a_position;
+  varying vec2 v_uv;
+  void main() {
+    v_uv = (a_position + 1.0) * 0.5;
+    v_uv.y = 1.0 - v_uv.y; // Flip Y for WebGL texture orientation
+    gl_Position = vec4(a_position, 0.0, 1.0);
+  }
+`;
+
+const fsSource = `
+  precision highp float;
+  uniform sampler2D u_origTex;
+  uniform sampler2D u_glitchTex;
+  uniform vec2 u_resolution;
+  uniform float u_time;
+  uniform float u_amplitude;
+  uniform float u_period;
+  uniform float u_effect;
+  varying vec2 v_uv;
+
+  void main() {
+    float safePeriod = u_period == 0.0 ? 0.0001 : u_period;
+    float freq1 = 6.28318530718 / safePeriod;
+    float freq2 = 6.28318530718 / (safePeriod / 1.5);
+
+    vec2 pixelPos = v_uv * u_resolution;
+    float x = pixelPos.x;
+    float y = pixelPos.y;
+
+    // Scale amplitude relative to base resolution for consistent visual displacement
+    float ampScaled = u_amplitude * (u_resolution.x / 300.0);
+
+    float dx = ampScaled * sin(freq1 * (x + u_time / 2000.0)) * sin(freq1 * (y + u_time / 2000.0));
+    float dy = ampScaled * sin(freq2 * (x + u_time / 3000.0)) * sin(freq2 * (y + u_time / 30000.0));
+
+    vec2 samplePos = clamp((pixelPos + vec2(dx, dy)) / u_resolution, 0.0, 1.0);
+
+    vec4 origCol = texture2D(u_origTex, v_uv);
+    vec4 glitchCol = texture2D(u_glitchTex, samplePos);
+
+    // Dynamic lerp extrapolation for intense rainbow & saturation effects
+    vec4 finalCol = origCol + (glitchCol - origCol) * u_effect;
+
+    gl_FragColor = vec4(clamp(finalCol.rgb, 0.0, 1.0), origCol.a);
+  }
+`;
+
+function createShader(glCtx, type, source) {
+  const shader = glCtx.createShader(type);
+  glCtx.shaderSource(shader, source);
+  glCtx.compileShader(shader);
+  if (!glCtx.getShaderParameter(shader, glCtx.COMPILE_STATUS)) {
+    console.error('Shader compile error:', glCtx.getShaderInfoLog(shader));
+    glCtx.deleteShader(shader);
+    return null;
+  }
+  return shader;
+}
+
+function initWebGL() {
+  try {
+    gl = canvas.getContext('webgl', { preserveDrawingBuffer: true, antialias: true, alpha: false }) ||
+         canvas.getContext('experimental-webgl', { preserveDrawingBuffer: true });
+  } catch (e) {
+    console.warn('WebGL not supported, falling back to 2D canvas', e);
+  }
+
+  if (!gl) return false;
+
+  const vs = createShader(gl, gl.VERTEX_SHADER, vsSource);
+  const fs = createShader(gl, gl.FRAGMENT_SHADER, fsSource);
+  program = gl.createProgram();
+  gl.attachShader(program, vs);
+  gl.attachShader(program, fs);
+  gl.linkProgram(program);
+
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    console.error('Program link error:', gl.getProgramInfoLog(program));
+    return false;
+  }
+
+  gl.useProgram(program);
+
+  // Full-screen Quad Buffer
+  const positionBuffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+  gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+    -1, -1,
+     1, -1,
+    -1,  1,
+    -1,  1,
+     1, -1,
+     1,  1,
+  ]), gl.STATIC_DRAW);
+
+  const posAttrLoc = gl.getAttribLocation(program, 'a_position');
+  gl.enableVertexAttribArray(posAttrLoc);
+  gl.vertexAttribPointer(posAttrLoc, 2, gl.FLOAT, false, 0, 0);
+
+  // Locate Uniforms
+  uniformLocations = {
+    origTex: gl.getUniformLocation(program, 'u_origTex'),
+    glitchTex: gl.getUniformLocation(program, 'u_glitchTex'),
+    resolution: gl.getUniformLocation(program, 'u_resolution'),
+    time: gl.getUniformLocation(program, 'u_time'),
+    amplitude: gl.getUniformLocation(program, 'u_amplitude'),
+    period: gl.getUniformLocation(program, 'u_period'),
+    effect: gl.getUniformLocation(program, 'u_effect')
+  };
+
+  origTexture = gl.createTexture();
+  glitchTexture = gl.createTexture();
+
+  return true;
+}
+
+const isWebGLReady = initWebGL();
+
+// ==========================================
+// 2. Interactive ASCII Slider Component
 // ==========================================
 class AsciiSlider {
   constructor(element, onChange, trackLength = 16) {
@@ -98,7 +233,6 @@ class AsciiSlider {
       this.isDragging = false;
     });
 
-    // Arrow keys & Home/End
     this.el.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
         const nextVal = Math.min(this.max, this.value + this.step);
@@ -120,55 +254,100 @@ class AsciiSlider {
 }
 
 // ==========================================
-// Image Processing & Glitch Loop
+// 3. Image Sizing & Glitch Texture Setup
 // ==========================================
-function resizeImage(image, maxWidth, maxHeight, useMaxSize = true) {
-  return new Promise((resolve) => {
-    const offCanvas = document.createElement('canvas');
-    const offCtx = offCanvas.getContext('2d');
+function resizeImageToCanvas(image, maxSize = TARGET_RESOLUTION) {
+  const offCanvas = document.createElement('canvas');
+  const offCtx = offCanvas.getContext('2d');
 
-    let width = image.width;
-    let height = image.height;
+  let width = image.naturalWidth || image.width;
+  let height = image.naturalHeight || image.height;
 
-    if (useMaxSize) {
-      const aspectRatio = width / height;
-      if (width > maxWidth || height > maxHeight) {
-        if (width > maxWidth) {
-          width = maxWidth;
-          height = width / aspectRatio;
-        }
-        if (height > maxHeight) {
-          height = maxHeight;
-          width = height * aspectRatio;
-        }
-      }
+  const aspectRatio = width / height;
+  if (width > maxSize || height > maxSize) {
+    if (width > height) {
+      width = maxSize;
+      height = Math.round(width / aspectRatio);
+    } else {
+      height = maxSize;
+      width = Math.round(height * aspectRatio);
     }
+  }
 
-    offCanvas.width = width;
-    offCanvas.height = height;
-    offCtx.drawImage(image, 0, 0, width, height);
-    const resizedImage = new Image();
-    resizedImage.onload = () => resolve(resizedImage);
-    resizedImage.src = offCanvas.toDataURL();
-  });
+  offCanvas.width = width;
+  offCanvas.height = height;
+  offCtx.drawImage(image, 0, 0, width, height);
+
+  return {
+    canvas: offCanvas,
+    ctx: offCtx,
+    imageData: offCtx.getImageData(0, 0, width, height),
+    width,
+    height
+  };
 }
 
-async function loadImage(src, useMaxSize = true) {
+function generateGlitchMap(data, w, h) {
+  const numPixels = (w * h);
+  const glitchedPixels = new Uint8ClampedArray(data.length);
+  const scale = w / 300.0;
+
+  for (let i = 0; i < numPixels; i++) {
+    const offset = i * 4;
+    const x = (i % w) + Math.round(15 * scale * (Math.random() - 0.5));
+    const y = Math.floor(i / w) + Math.round(3 * scale * (Math.random() - 0.5));
+    const offset2 = (y * w + x) * 4;
+
+    glitchedPixels[offset] = data[offset2];
+    glitchedPixels[offset + 1] = data[offset2 + 1];
+    glitchedPixels[offset + 2] = data[offset2 + 2];
+    glitchedPixels[offset + 3] = data[offset2 + 3];
+  }
+
+  return glitchedPixels;
+}
+
+function updateTextures() {
+  if (!isWebGLReady || !origImageData || !glitchImageData) return;
+
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, origTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, imageWidth, imageHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, origImageData.data);
+
+  gl.activeTexture(gl.TEXTURE1);
+  gl.bindTexture(gl.TEXTURE_2D, glitchTexture);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, imageWidth, imageHeight, 0, gl.RGBA, gl.UNSIGNED_BYTE, glitchImageData);
+}
+
+async function loadImage(src) {
   if (animationRequestId) {
     cancelAnimationFrame(animationRequestId);
   }
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const img = new Image();
   img.crossOrigin = 'anonymous';
-  img.onload = async function () {
-    const maxWidth = useMaxSize ? 300 : img.width * 0.5;
-    const maxHeight = useMaxSize ? 300 : img.height * 0.5;
-    const resizedImg = await resizeImage(img, maxWidth, maxHeight);
-    canvas.width = resizedImg.width;
-    canvas.height = resizedImg.height;
-    ctx.drawImage(resizedImg, 0, 0);
-    imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  img.onload = function () {
+    currentImageSource = img;
+    const processed = resizeImageToCanvas(img, TARGET_RESOLUTION);
+
+    imageWidth = processed.width;
+    imageHeight = processed.height;
+    origImageData = processed.imageData;
+
+    canvas.width = imageWidth;
+    canvas.height = imageHeight;
+
+    if (isWebGLReady) {
+      gl.viewport(0, 0, imageWidth, imageHeight);
+    }
 
     if (!eventListenersInitialized) {
       setupEventListeners();
@@ -180,7 +359,7 @@ async function loadImage(src, useMaxSize = true) {
 
   img.onerror = function () {
     if (src === defaultImageUrl) {
-      loadImage(defaultImageFallback, useMaxSize);
+      loadImage(defaultImageFallback);
     }
   };
 
@@ -192,54 +371,79 @@ async function loadImage(src, useMaxSize = true) {
 }
 
 function applyGlitch() {
-  if (!imageData) return;
+  if (!origImageData) return;
 
-  const data = imageData.data;
-  const numPixels = data.length / 4;
-  const lerp = (a, b, t) => a + (b - a) * t;
+  glitchImageData = generateGlitchMap(origImageData.data, imageWidth, imageHeight);
 
-  const glitchedPixels = new Uint8ClampedArray(data);
-  for (let i = 0; i < numPixels; i++) {
-    const offset = i * 4;
-    const x = (i % canvas.width) + 15 * (Math.random() - 0.5);
-    const y = Math.floor(i / canvas.width) + 3 * (Math.random() - 0.5);
-    const offset2 = (Math.floor(y) * canvas.width + Math.floor(x)) * 4;
-    glitchedPixels[offset] = data[offset2];
-    glitchedPixels[offset + 1] = data[offset2 + 1];
-    glitchedPixels[offset + 2] = data[offset2 + 2];
-    glitchedPixels[offset + 3] = data[offset2 + 3];
+  if (isWebGLReady) {
+    updateTextures();
+    startWebGLAnimationLoop();
+  } else {
+    start2DFallbackAnimationLoop();
   }
+}
 
-  const waveImageData = new ImageData(glitchedPixels, canvas.width, canvas.height);
-
+// ==========================================
+// 4. Animation Loops (WebGL 60fps & 2D Fallback)
+// ==========================================
+function startWebGLAnimationLoop() {
   if (animationRequestId) {
     cancelAnimationFrame(animationRequestId);
   }
 
+  gl.useProgram(program);
+  gl.uniform1i(uniformLocations.origTex, 0);
+  gl.uniform1i(uniformLocations.glitchTex, 1);
+  gl.uniform2f(uniformLocations.resolution, imageWidth, imageHeight);
+
+  const render = (time) => {
+    gl.uniform1f(uniformLocations.time, time);
+    gl.uniform1f(uniformLocations.amplitude, amplitude);
+    gl.uniform1f(uniformLocations.period, period);
+    gl.uniform1f(uniformLocations.effect, effectIntensity);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    animationRequestId = requestAnimationFrame(render);
+  };
+
+  animationRequestId = requestAnimationFrame(render);
+}
+
+function start2DFallbackAnimationLoop() {
+  if (animationRequestId) {
+    cancelAnimationFrame(animationRequestId);
+  }
+
+  const ctx2d = canvas.getContext('2d');
+  const numPixels = imageWidth * imageHeight;
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const waveImageData = new ImageData(new Uint8ClampedArray(glitchImageData), imageWidth, imageHeight);
+
   let frameCount = 0;
   const animate = () => {
     frameCount++;
-    if (frameCount % 4 === 0) {
+    if (frameCount % 2 === 0) {
       const safePeriod = period === 0 ? 0.001 : period;
       const freq1 = (2 * Math.PI) / safePeriod;
       const freq2 = (2 * Math.PI) / (safePeriod / 1.5);
       const now = Date.now();
+      const orig = origImageData.data;
 
       for (let i = 0; i < numPixels; i++) {
         const offset = i * 4;
-        const x = i % canvas.width;
-        const y = Math.floor(i / canvas.width);
+        const x = i % imageWidth;
+        const y = Math.floor(i / imageWidth);
         const dx = Math.round(amplitude * Math.sin(freq1 * (x + now / 2000)) * Math.sin(freq1 * (y + now / 2000)));
         const dy = Math.round(amplitude * Math.sin(freq2 * (x + now / 3000)) * Math.sin(freq2 * (y + now / 30000)));
-        const x2 = Math.max(0, Math.min(canvas.width - 1, x + dx));
-        const y2 = Math.max(0, Math.min(canvas.height - 1, y + dy));
-        const offset2 = (y2 * canvas.width + x2) * 4;
+        const x2 = Math.max(0, Math.min(imageWidth - 1, x + dx));
+        const y2 = Math.max(0, Math.min(imageHeight - 1, y + dy));
+        const offset2 = (y2 * imageWidth + x2) * 4;
 
         for (let j = 0; j < 4; j++) {
-          waveImageData.data[offset + j] = lerp(imageData.data[offset + j], glitchedPixels[offset2 + j], effectIntensity);
+          waveImageData.data[offset + j] = lerp(orig[offset + j], glitchImageData[offset2 + j], effectIntensity);
         }
       }
-      ctx.putImageData(waveImageData, 0, 0);
+      ctx2d.putImageData(waveImageData, 0, 0);
     }
     animationRequestId = requestAnimationFrame(animate);
   };
@@ -247,25 +451,17 @@ function applyGlitch() {
   animate();
 }
 
-// 4x crisp export on click
+// Crisp High-Resolution Export
 function saveImage() {
   if (!canvas) return;
-  const exportCanvas = document.createElement('canvas');
-  exportCanvas.width = canvas.width * 4;
-  exportCanvas.height = canvas.height * 4;
-  const exportCtx = exportCanvas.getContext('2d');
-  
-  exportCtx.imageSmoothingEnabled = false;
-  exportCtx.drawImage(canvas, 0, 0, exportCanvas.width, exportCanvas.height);
-  
   const link = document.createElement('a');
-  link.href = exportCanvas.toDataURL('image/png');
+  link.href = canvas.toDataURL('image/png');
   link.download = 'glitched-image.png';
   link.click();
 }
 
 // ==========================================
-// Web Audio Synth
+// 5. Web Audio Harmonic Synth
 // ==========================================
 let currentPitchValue = -900;
 let sourceNode;
@@ -347,10 +543,9 @@ function handleInteraction() {
 }
 
 // ==========================================
-// Event Listeners Setup
+// 6. Event Listeners Setup
 // ==========================================
 function setupEventListeners() {
-  // Initialize Pure ASCII Sliders with live callbacks
   new AsciiSlider(amplitudeEl, (val) => {
     amplitude = val;
     currentPitchValue = amplitude;
@@ -372,7 +567,7 @@ function setupEventListeners() {
     feedback.gain.value = mappedFeedback;
   }, 16);
 
-  // Click canvas saves 4x crisp image and re-triggers glitch scatter
+  // Click canvas saves crisp image and re-triggers glitch scatter
   canvas.addEventListener('click', function (e) {
     e.stopPropagation();
     handleInteraction();
@@ -387,7 +582,7 @@ function setupEventListeners() {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith('image/')) {
-        loadImage(file, true);
+        loadImage(file);
       }
     }
   });
@@ -405,5 +600,5 @@ function setupEventListeners() {
   });
 }
 
-// Load initial image
-loadImage(defaultImageUrl, true);
+// Initial Boot
+loadImage(defaultImageUrl);
