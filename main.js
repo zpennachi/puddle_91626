@@ -1,11 +1,10 @@
 ﻿/**
  * zpennachi
- * Ultra-Fast High-Resolution 2D Glitch Engine with Sine LUT (Zero Math.sin in inner loop)
- * 100% Authentic Byte-Offset Glitch & True Color Burning Feedback at 60 FPS
+ * Exact 100% Original Webflow Glitch Algorithm with Interactive ASCII Sliders
  */
 
 const canvas = document.getElementById('glitchCanvas');
-const ctx = canvas.getContext('2d', { willReadFrequently: true });
+const ctx = canvas.getContext('2d');
 const muteBtn = document.getElementById('mute-btn');
 
 const amplitudeEl = document.getElementById('amplitude-slider');
@@ -16,26 +15,15 @@ let amplitude = parseFloat(amplitudeEl.dataset.val);
 let period = parseFloat(periodEl.dataset.val);
 let effectIntensity = parseFloat(effectEl.dataset.val);
 
-let imageData = null;
-let glitchedPixels = null;
-let waveImageData = null;
-let animationRequestId = null;
+let imageData;
 let eventListenersInitialized = false;
-
-// High-definition resolution (600px for crisp detail + 60fps performance)
-const TARGET_RESOLUTION = 600;
+let animationRequestId;
 
 const defaultImageUrl = './assets/default-image.webp';
 const defaultImageFallback = 'https://cdn.prod.website-files.com/643af806354c783eb866d160/645123b173e3c023c2af5543_06_Seeing-the-forest-for-the-trees.webp';
 
-// Pre-allocated Lookup Tables for 60fps performance
-let sinX1 = new Float32Array(TARGET_RESOLUTION);
-let sinY1 = new Float32Array(TARGET_RESOLUTION);
-let sinX2 = new Float32Array(TARGET_RESOLUTION);
-let sinY2 = new Float32Array(TARGET_RESOLUTION);
-
 // ==========================================
-// 1. Interactive ASCII Slider Component
+// Interactive ASCII Slider Component
 // ==========================================
 class AsciiSlider {
   constructor(element, onChange, trackLength = 16) {
@@ -131,24 +119,27 @@ class AsciiSlider {
 }
 
 // ==========================================
-// 2. Image Processing & Setup
+// Exact Original Image Sizing & Glitch Code
 // ==========================================
-function resizeImage(image, maxSize = TARGET_RESOLUTION) {
+function resizeImage(image, maxWidth, maxHeight, useMaxSize = true) {
   return new Promise((resolve) => {
     const offCanvas = document.createElement('canvas');
     const offCtx = offCanvas.getContext('2d');
 
-    let width = image.naturalWidth || image.width;
-    let height = image.naturalHeight || image.height;
+    let width = image.width;
+    let height = image.height;
 
-    const aspectRatio = width / height;
-    if (width > maxSize || height > maxSize) {
-      if (width > height) {
-        width = maxSize;
-        height = Math.round(width / aspectRatio);
-      } else {
-        height = maxSize;
-        width = Math.round(height * aspectRatio);
+    if (useMaxSize) {
+      const aspectRatio = width / height;
+      if (width > maxWidth || height > maxHeight) {
+        if (width > maxWidth) {
+          width = maxWidth;
+          height = width / aspectRatio;
+        }
+        if (height > maxHeight) {
+          height = maxHeight;
+          width = height * aspectRatio;
+        }
       }
     }
 
@@ -161,25 +152,20 @@ function resizeImage(image, maxSize = TARGET_RESOLUTION) {
   });
 }
 
-async function loadImage(src) {
+async function loadImage(src, useMaxSize = true) {
   if (animationRequestId) {
     cancelAnimationFrame(animationRequestId);
   }
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
   const img = new Image();
   img.crossOrigin = 'anonymous';
   img.onload = async function () {
-    const resizedImg = await resizeImage(img, TARGET_RESOLUTION);
-
+    const maxWidth = useMaxSize ? 300 : img.width * 0.5;
+    const maxHeight = useMaxSize ? 300 : img.height * 0.5;
+    const resizedImg = await resizeImage(img, maxWidth, maxHeight);
     canvas.width = resizedImg.width;
     canvas.height = resizedImg.height;
-
-    // Resize pre-calculated LUTs
-    sinX1 = new Float32Array(canvas.width);
-    sinY1 = new Float32Array(canvas.height);
-    sinX2 = new Float32Array(canvas.width);
-    sinY2 = new Float32Array(canvas.height);
-
     ctx.drawImage(resizedImg, 0, 0);
     imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
 
@@ -188,12 +174,12 @@ async function loadImage(src) {
       eventListenersInitialized = true;
     }
 
-    applyGlitch();
+    triggerSort();
   };
 
   img.onerror = function () {
     if (src === defaultImageUrl) {
-      loadImage(defaultImageFallback);
+      loadImage(defaultImageFallback, useMaxSize);
     }
   };
 
@@ -204,32 +190,29 @@ async function loadImage(src) {
   }
 }
 
-// ==========================================
-// 3. Ultra-Fast Sine LUT Glitch & Feedback Engine
-// ==========================================
-function applyGlitch() {
-  if (!imageData) return;
+function triggerSort() {
+  if (!imageData) {
+    return;
+  }
 
   const data = imageData.data;
   const numPixels = data.length / 4;
-  const w = canvas.width;
-  const h = canvas.height;
-  const scale = w / 300.0;
 
-  glitchedPixels = new Uint8ClampedArray(data.length);
+  const lerp = (a, b, t) => a + (b - a) * t;
+
+  const glitchedPixels = new Uint8ClampedArray(data);
   for (let i = 0; i < numPixels; i++) {
     const offset = i * 4;
-    const x = (i % w) + Math.round(15 * scale * (Math.random() - 0.5));
-    const y = Math.floor(i / w) + Math.round(3 * scale * (Math.random() - 0.5));
-    const offset2 = (y * w + x) * 4;
-
+    const x = (i % canvas.width) + 15 * (Math.random() - 0.5);
+    const y = Math.floor(i / canvas.width) + 3 * (Math.random() - 0.5);
+    const offset2 = (Math.floor(y) * canvas.width + Math.floor(x)) * 4;
     glitchedPixels[offset] = data[offset2];
     glitchedPixels[offset + 1] = data[offset2 + 1];
     glitchedPixels[offset + 2] = data[offset2 + 2];
     glitchedPixels[offset + 3] = data[offset2 + 3];
   }
 
-  waveImageData = new ImageData(new Uint8ClampedArray(glitchedPixels), w, h);
+  const waveImageData = new ImageData(glitchedPixels, canvas.width, canvas.height);
 
   if (animationRequestId) {
     cancelAnimationFrame(animationRequestId);
@@ -238,87 +221,40 @@ function applyGlitch() {
   let frameCount = 0;
   const animate = () => {
     frameCount++;
-    if (frameCount % 2 === 0) {
-      const safePeriod = period === 0 ? 0.001 : period;
-      const freq1 = (2 * Math.PI) / safePeriod;
-      const freq2 = (2 * Math.PI) / (safePeriod / 1.5);
+    if (frameCount % 4 === 0) {
+      const freq1 = (2 * Math.PI) / period;
+      const freq2 = (2 * Math.PI) / (period / 1.5);
       const now = Date.now();
 
-      const origData = imageData.data;
-      const waveData = waveImageData.data;
+      for (let i = 0; i < numPixels; i++) {
+        const offset = i * 4;
+        const x = i % canvas.width;
+        const y = Math.floor(i / canvas.width);
+        const dx = Math.round(amplitude * Math.sin(freq1 * (x + (now / 2000))) * Math.sin(freq1 * (y + (now / 2000))));
+        const dy = Math.round(amplitude * Math.sin(freq2 * (x + (now / 3000))) * Math.sin(freq2 * (y + (now / 30000))));
+        const x2 = Math.max(0, Math.min(canvas.width - 1, x + dx));
+        const y2 = Math.max(0, Math.min(canvas.height - 1, y + dy));
+        const offset2 = (y2 * canvas.width + x2) * 4;
 
-      // 1. Fill Lookup Tables once per frame (only W + H calculations instead of W*H!)
-      const t2000 = now / 2000;
-      const t3000 = now / 3000;
-      const t30000 = now / 30000;
-
-      for (let x = 0; x < w; x++) {
-        sinX1[x] = Math.sin(freq1 * (x + t2000));
-        sinX2[x] = Math.sin(freq2 * (x + t3000));
-      }
-      for (let y = 0; y < h; y++) {
-        sinY1[y] = Math.sin(freq1 * (y + t2000));
-        sinY2[y] = Math.sin(freq2 * (y + t30000));
-      }
-
-      // Scale amplitude proportionally with resolution
-      const ampScaled = amplitude * (w / 300.0);
-      const eff = effectIntensity;
-
-      // 2. Lightning-fast inner pixel loop (pure arithmetic, zero Math.sin)
-      for (let y = 0; y < h; y++) {
-        const factorY1 = ampScaled * sinY1[y];
-        const factorY2 = ampScaled * sinY2[y];
-        const rowOffset = y * w;
-
-        for (let x = 0; x < w; x++) {
-          const pixelIndex = rowOffset + x;
-          const offset = pixelIndex * 4;
-
-          const dx = (sinX1[x] * factorY1) | 0;
-          const dy = (sinX2[x] * factorY2) | 0;
-
-          const x2 = x + dx < 0 ? 0 : (x + dx >= w ? w - 1 : x + dx);
-          const y2 = y + dy < 0 ? 0 : (y + dy >= h ? h - 1 : y + dy);
-          const offset2 = (y2 * w + x2) * 4;
-
-          // Authentic Lerp & Burning Color Extrapolation
-          const origR = origData[offset];
-          const origG = origData[offset + 1];
-          const origB = origData[offset + 2];
-
-          const glitchR = glitchedPixels[offset2];
-          const glitchG = glitchedPixels[offset2 + 1];
-          const glitchB = glitchedPixels[offset2 + 2];
-
-          // True Color Burning (when eff > 1.0, channels clamp to neon primaries)
-          waveData[offset] = origR + (glitchR - origR) * eff;
-          waveData[offset + 1] = origG + (glitchG - origG) * eff;
-          waveData[offset + 2] = origB + (glitchB - origB) * eff;
-          waveData[offset + 3] = origData[offset + 3];
+        for (let j = 0; j < 4; j++) {
+          waveImageData.data[offset + j] = lerp(imageData.data[offset + j], glitchedPixels[offset2 + j], effectIntensity);
         }
       }
-
       ctx.putImageData(waveImageData, 0, 0);
     }
-
     animationRequestId = requestAnimationFrame(animate);
   };
 
   animate();
 }
 
-// 4x crisp export on click
 function saveImage() {
   if (!canvas) return;
   const exportCanvas = document.createElement('canvas');
-  exportCanvas.width = canvas.width * 2;
-  exportCanvas.height = canvas.height * 2;
+  exportCanvas.width = 1920;
+  exportCanvas.height = 1080;
   const exportCtx = exportCanvas.getContext('2d');
-  
-  exportCtx.imageSmoothingEnabled = false;
   exportCtx.drawImage(canvas, 0, 0, exportCanvas.width, exportCanvas.height);
-  
   const link = document.createElement('a');
   link.href = exportCanvas.toDataURL('image/png');
   link.download = 'glitched-image.png';
@@ -326,7 +262,7 @@ function saveImage() {
 }
 
 // ==========================================
-// 4. Web Audio Harmonic Synth
+// Web Audio Synth
 // ==========================================
 let currentPitchValue = -900;
 let sourceNode;
@@ -408,7 +344,7 @@ function handleInteraction() {
 }
 
 // ==========================================
-// 5. Event Listeners Setup
+// Event Listeners
 // ==========================================
 function setupEventListeners() {
   new AsciiSlider(amplitudeEl, (val) => {
@@ -432,12 +368,12 @@ function setupEventListeners() {
     feedback.gain.value = mappedFeedback;
   }, 16);
 
-  // Click canvas saves crisp image and re-triggers glitch scatter
+  // Clicking canvas re-triggers the sort glitch and saves image
   canvas.addEventListener('click', function (e) {
     e.stopPropagation();
     handleInteraction();
     saveImage();
-    applyGlitch();
+    triggerSort();
   });
 
   // Drag & drop custom image
@@ -447,7 +383,7 @@ function setupEventListeners() {
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const file = e.dataTransfer.files[0];
       if (file.type.startsWith('image/')) {
-        loadImage(file);
+        loadImage(file, true);
       }
     }
   });
@@ -466,4 +402,4 @@ function setupEventListeners() {
 }
 
 // Initial Boot
-loadImage(defaultImageUrl);
+loadImage(defaultImageUrl, true);
